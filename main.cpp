@@ -55,11 +55,11 @@ struct MyFunctor : Functor<double>
         float beta = x(1);
         float gamma = x(2);
         
-        float h2 = 0.68983287;
-        float h3 = -0.037645265;
-        float h5 = 0.96485317;
-        float h6 = 0.25615895;
-        float h8 = -0.036372069;
+        float h2 = 0.59885508;
+        float h3 = -0.037879128;
+        float h5 = 0.83761203;
+        float h6 = 0.25667429;
+        float h8 = -0.031710938;
 
         float D1 = h5 - h8 * h6;
         float D4 = h8 * h3 - h2;
@@ -86,7 +86,7 @@ struct MyFunctor : Functor<double>
         float C3 = c3 * u2 + c6 * v2;
         
         float D = D1 * u2 + D4 * v2 + D7;
-        float R = 1.73205080757;
+        float R = 1.9945;
 
         fvec(i) = pow(D, 2) + pow(A2 * alpha + B2 * beta + C2 * gamma, 2) - pow(R, 2) * pow(A3 * alpha + B3 * beta + C3 * gamma, 2);
       /* fvec(i) = this->Points[i](1) - (x(0) * this->Points[i](0) + x(1)); */
@@ -98,7 +98,7 @@ struct MyFunctor : Functor<double>
 
   Point2DVector Points;
   
-  int inputs() const { return 2; } // There are two parameters of the model
+  int inputs() const { return 3; } // There are two parameters of the model
   int values() const { return this->Points.size(); } // The number of observations
 };
 
@@ -137,8 +137,8 @@ NormalizedData normalizeData(const std::vector<cv::Point2f>& points)
 	spreadx /= ptsNum;
 	spready /= ptsNum;
 
-    spreadx += 1e-20f;
-    spready += 1e-20f;
+    /* spreadx += 1e-20f; */
+    /* spready += 1e-20f; */
 
 	cv::Mat offs = cv::Mat::eye(3, 3, CV_32F);
 	cv::Mat scale = cv::Mat::eye(3, 3, CV_32F);
@@ -204,8 +204,8 @@ cv::Mat calcHomography(std::vector<cv::Point2f>& points_map, std::vector<cv::Poi
 
     cv::Mat H(3, 2, CV_32F);
 
-    std::cout << "evecs\n" << eVecs << "\n";
-    /* std::cout << "evals\n" << eVals << "\n"; */
+    std::cout << "evecs:\n" << eVecs << "\n";
+    std::cout << "evals:\n" << eVals << "\n";
 
     int count = 0;
     for (int i = 0; i < 3; i++){
@@ -215,11 +215,8 @@ cv::Mat calcHomography(std::vector<cv::Point2f>& points_map, std::vector<cv::Poi
         }
     }
 
-
     // normalize
     H = H * (1.0 / H.at<float>(2, 1));
-
-    std::cout << ":::::H:::::\n" << H  << "\n";
     
     return H;
     /* return normalized_points_map.T.inv() * H * normalized_points_image.T; */
@@ -281,20 +278,32 @@ int main(int argc, char* argv[]){
     std::vector<cv::Point2f> points_image_line(points_image_normalized.begin(), points_image_normalized.begin()+3);
     std::vector<cv::Point2f> points_image_circle(points_image_normalized.begin()+3, points_image_normalized.end());
 
-    /* for(auto & e: points_image_normalized) std::cout << e << "\n"; */
-
     std::vector<cv::Point2f> points_map;
     points_map.emplace_back(cv::Point2f(0, 1));
     points_map.emplace_back(cv::Point2f(0, 0));
     points_map.emplace_back(cv::Point2f(0, -1));
 
+    for(int i = 1; i < 360; i++){
+        float angle = static_cast<float>(i) * 3.14159 / 180.0;
+        float x = cos(angle);
+        float y = sin(angle);
+        points_map.emplace_back(cv::Point2f(x, y));
+    }
+
     NormalizedData points_map_nd = normalizeData(points_map);
     std::vector<cv::Point2f> points_map_normalized = points_map_nd.points;
     
-    /* std::cout << "circle:::::\n"; */
-    /* for(auto & e: points_image_circle) std::cout << e.x << " " << e.y << "\n"; */
+    std::vector<cv::Point2f> points_map_line(points_map_normalized.begin(), points_map_normalized.begin()+3);
 
-    cv::Mat H = calcHomography(points_map_normalized, points_image_line);
+    std::cout << "points_image_line:\n"; 
+    for(auto & e: points_image_line) std::cout << e << "\n";
+    
+    std::cout << "points_map_line:\n"; 
+    for(auto & e: points_map_line) std::cout << e << "\n";
+
+    cv::Mat H = calcHomography(points_map_line, points_image_line);
+
+    std::cout << "6 H Normalized:\n" << H << "\n";
 
     //calculating the last three homography elements
     Eigen::VectorXd x(3);
@@ -332,46 +341,35 @@ int main(int argc, char* argv[]){
 
     hconcat(free_param, H, final_H);
     
-    std::cout << "final H" << final_H << "\n";
+    std::cout << "9H Normalized\n" << final_H << "\n";
 
-    /* final_H = points_image_nd.T.inv() * final_H * points_map_nd.T; */
-    /* std::cout << "final H normalized" << final_H << "\n"; */
+    final_H = points_image_nd.T.inv() * final_H * points_map_nd.T;
+    std::cout << "9H Denormalized by T\n" << final_H << "\n";
     
-    //generate unit circle data
-    //
-    /* std::ofstream myfile("CSC2134.txt"); */
-     
+    //Generate unit circle data 
     std::vector<cv::Point2f> unit_circle;
     for(int i = 1; i < 360; i++){
         float angle = static_cast<float>(i) * 3.14159 / 180.0;
         float x = cos(angle);
         float y = sin(angle);
         unit_circle.emplace_back(cv::Point2f(x, y));
-
-        /* myfile<< unit_circle[i].x << " " << unit_circle[i].y << std::endl; */
-
-        std::cout << x << " " << y << "\n";
     }
-    //write to a life 
-
-    /* myfile.close(); */
 
     //projection to the original image
     cv::Mat img = cv::imread("image.png", cv::IMREAD_COLOR);
     cv::namedWindow("image", cv::WINDOW_NORMAL);
 
-    //draw_cross(pt, img_query_bgr, 15);
-    
     cv::Point2f output;
-    std::cout << "--------------- transformed points";
     std::ofstream myfile("output.txt");
     for(auto & e:  unit_circle){
-        transformPoint(e, output, final_H, false);
-        myfile<< output.x << " " << output.y << std::endl;
-        std::cout << output << "\n";
-    }
-    myfile.close();
 
+        transformPoint(e, output, final_H, true);
+        myfile<< output.x << " " << output.y << std::endl;
+        draw_cross(output, img, 15);
+
+    }
+
+    myfile.close();
     cv::imshow("image", img);
     cv::waitKey(0);
 
