@@ -11,6 +11,8 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
+#include <cmath>
+
 typedef std::vector<Eigen::Vector2d,Eigen::aligned_allocator<Eigen::Vector2d> > Point2DVector;
 
 Point2DVector GeneratePoints();
@@ -223,6 +225,37 @@ cv::Mat calcHomography(std::vector<cv::Point2f>& points_map, std::vector<cv::Poi
     /* return normalized_points_map.T.inv() * H * normalized_points_image.T; */
 }
 
+void draw_cross(cv::Point pt, cv::Mat image, int size){
+
+        cv::Point starting1(pt.x - size, pt.y-size);
+        cv::Point ending1(pt.x + size, pt.y+size);
+
+        cv::Point starting2(pt.x + size, pt.y-size);
+        cv::Point ending2(pt.x-size, pt.y+size);
+
+        cv::Scalar line_Color(255, 255, 255);
+       int thickness = 2;
+       
+    cv::line(image, starting1, ending1, line_Color, thickness);
+    cv::line(image, starting2, ending2, line_Color, thickness);
+}
+
+void transformPoint(const cv::Point2f& input, cv::Point2f& output, const cv::Mat& H, bool isPerspective)
+{
+    cv::Mat pt(3, 1, CV_32FC1);
+    pt.at<float>(0, 0) = input.x;
+    pt.at<float>(1, 0) = input.y;
+    pt.at<float>(2, 0) = 1.0;
+    
+    cv::Mat ptTransformed = H * pt;
+    if (isPerspective)
+        ptTransformed = (1.0 / ptTransformed.at<float>(2, 0)) * ptTransformed;
+
+    float newX = (ptTransformed.at<float>(0, 0));
+    float newY = (ptTransformed.at<float>(1, 0));
+
+    output = cv::Point2f(newX, newY);
+}
 
 int main(int argc, char* argv[]){
 
@@ -261,7 +294,7 @@ int main(int argc, char* argv[]){
     /* std::cout << "circle:::::\n"; */
     /* for(auto & e: points_image_circle) std::cout << e.x << " " << e.y << "\n"; */
 
-    cv::Mat image = calcHomography(points_map_normalized, points_image_line);
+    cv::Mat H = calcHomography(points_map_normalized, points_image_line);
 
     //calculating the last three homography elements
     Eigen::VectorXd x(3);
@@ -289,6 +322,58 @@ int main(int argc, char* argv[]){
     //std::cout << "info: " << lm.info() << std::endl;
 
     std::cout << "x that minimizes the function: " << std::endl << x << std::endl;
+    
+    cv::Mat final_H(3, 3, CV_32F);
+    
+    cv::Mat free_param(3, 1, CV_32F);
+    free_param.at<float>(0, 0) = x(0);
+    free_param.at<float>(1, 0) = x(1);
+    free_param.at<float>(2, 0) = x(2);
+
+    hconcat(free_param, H, final_H);
+    
+    std::cout << "final H" << final_H << "\n";
+
+    /* final_H = points_image_nd.T.inv() * final_H * points_map_nd.T; */
+    /* std::cout << "final H normalized" << final_H << "\n"; */
+    
+    //generate unit circle data
+    //
+    /* std::ofstream myfile("CSC2134.txt"); */
+     
+    std::vector<cv::Point2f> unit_circle;
+    for(int i = 1; i < 360; i++){
+        float angle = static_cast<float>(i) * 3.14159 / 180.0;
+        float x = cos(angle);
+        float y = sin(angle);
+        unit_circle.emplace_back(cv::Point2f(x, y));
+
+        /* myfile<< unit_circle[i].x << " " << unit_circle[i].y << std::endl; */
+
+        std::cout << x << " " << y << "\n";
+    }
+    //write to a life 
+
+    /* myfile.close(); */
+
+    //projection to the original image
+    cv::Mat img = cv::imread("image.png", cv::IMREAD_COLOR);
+    cv::namedWindow("image", cv::WINDOW_NORMAL);
+
+    //draw_cross(pt, img_query_bgr, 15);
+    
+    cv::Point2f output;
+    std::cout << "--------------- transformed points";
+    std::ofstream myfile("output.txt");
+    for(auto & e:  unit_circle){
+        transformPoint(e, output, final_H, false);
+        myfile<< output.x << " " << output.y << std::endl;
+        std::cout << output << "\n";
+    }
+    myfile.close();
+
+    cv::imshow("image", img);
+    cv::waitKey(0);
 
     return 0;
 }
