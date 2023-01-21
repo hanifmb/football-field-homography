@@ -7,6 +7,101 @@
 #include <fstream>
 #include <sstream>
 
+#include <unsupported/Eigen/NonLinearOptimization>
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
+
+typedef std::vector<Eigen::Vector2d,Eigen::aligned_allocator<Eigen::Vector2d> > Point2DVector;
+
+Point2DVector GeneratePoints();
+
+// Generic functor
+template<typename _Scalar, int NX = Eigen::Dynamic, int NY = Eigen::Dynamic>
+struct Functor
+{
+typedef _Scalar Scalar;
+enum {
+    InputsAtCompileTime = NX,
+    ValuesAtCompileTime = NY
+};
+typedef Eigen::Matrix<Scalar,InputsAtCompileTime,1> InputType;
+typedef Eigen::Matrix<Scalar,ValuesAtCompileTime,1> ValueType;
+typedef Eigen::Matrix<Scalar,ValuesAtCompileTime,InputsAtCompileTime> JacobianType;
+
+int m_inputs, m_values;
+
+Functor() : m_inputs(InputsAtCompileTime), m_values(ValuesAtCompileTime) {}
+Functor(int inputs, int values) : m_inputs(inputs), m_values(values) {}
+
+int inputs() const { return m_inputs; }
+int values() const { return m_values; }
+
+};
+
+
+struct MyFunctor : Functor<double>
+{
+  int operator()(const Eigen::VectorXd &x, Eigen::VectorXd &fvec) const
+  {
+    // "a" in the model is x(0), and "b" is x(1)
+    for(unsigned int i = 0; i < this->Points.size(); ++i)
+      {
+        float u2 = this->Points[i](0);
+        float v2 = this->Points[i](1);
+
+        float alpha = x(0);
+        float beta = x(1);
+        float gamma = x(2);
+        
+        float h2 = 0.68983287;
+        float h3 = -0.037645265;
+        float h5 = 0.96485317;
+        float h6 = 0.25615895;
+        float h8 = -0.036372069;
+
+        float D1 = h5 - h8 * h6;
+        float D4 = h8 * h3 - h2;
+        float D7 = h2 * h6 - h5 * h3;
+        
+        float a5 = 1;
+        float a6 = -h8;
+        float a8 = -h6;
+        float a9 = h5;
+        float b2 = -1;
+        float b3 = h8;
+        float b8 = h3;
+        float b9 = -h2;
+        float c2 = h6;
+        float c3 = -h5;
+        float c5 = -h3;
+        float c6 = h2;
+
+        float A2 = a5 * v2 + a8;
+        float A3 = a6 * v2 + a9;
+        float B2 = b2 * u2 + b8;
+        float B3 = b3 * u2 + b9;
+        float C2 = c2 * u2 + c5 * v2;
+        float C3 = c3 * u2 + c6 * v2;
+        
+        float D = D1 * u2 + D4 * v2 + D7;
+        float R = 1.73205080757;
+
+        fvec(i) = pow(D, 2) + pow(A2 * alpha + B2 * beta + C2 * gamma, 2) - pow(R, 2) * pow(A3 * alpha + B3 * beta + C3 * gamma, 2);
+      /* fvec(i) = this->Points[i](1) - (x(0) * this->Points[i](0) + x(1)); */
+      /* fvec(i) = this->Points[i](1) - (x(0) * this->Points[i](0) + x(1)); */
+      }
+
+    return 0;
+  }
+
+  Point2DVector Points;
+  
+  int inputs() const { return 2; } // There are two parameters of the model
+  int values() const { return this->Points.size(); } // The number of observations
+};
+
+struct MyFunctorNumericalDiff : Eigen::NumericalDiff<MyFunctor> {};
+
 struct NormalizedData
 {
 	cv::Mat T;
@@ -162,10 +257,38 @@ int main(int argc, char* argv[]){
 
     NormalizedData points_map_nd = normalizeData(points_map);
     std::vector<cv::Point2f> points_map_normalized = points_map_nd.points;
-
-    for(auto & e: points_image_line) std::cout << e << "\n";
+    
+    /* std::cout << "circle:::::\n"; */
+    /* for(auto & e: points_image_circle) std::cout << e.x << " " << e.y << "\n"; */
 
     cv::Mat image = calcHomography(points_map_normalized, points_image_line);
+
+    //calculating the last three homography elements
+    Eigen::VectorXd x(3);
+    /* x.fill(2.0f); */
+    x(0) = 0;
+    x(1) = 0;
+    x(2) = 0;
+
+    Point2DVector points;
+
+    for(auto & e: points_image_circle){
+        Eigen::Vector2d point;
+        point(0) = e.x;
+        point(1) = e.y;
+        points.push_back(point);
+    }
+        
+    MyFunctorNumericalDiff functor;
+    functor.Points = points;
+    Eigen::LevenbergMarquardt<MyFunctorNumericalDiff> lm(functor);
+
+    Eigen::LevenbergMarquardtSpace::Status status = lm.minimize(x);
+    std::cout << "status: " << status << std::endl;
+
+    //std::cout << "info: " << lm.info() << std::endl;
+
+    std::cout << "x that minimizes the function: " << std::endl << x << std::endl;
 
     return 0;
 }
