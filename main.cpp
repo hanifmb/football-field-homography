@@ -21,22 +21,22 @@ Point2DVector GeneratePoints();
 template<typename _Scalar, int NX = Eigen::Dynamic, int NY = Eigen::Dynamic>
 struct Functor
 {
-typedef _Scalar Scalar;
-enum {
-    InputsAtCompileTime = NX,
-    ValuesAtCompileTime = NY
-};
-typedef Eigen::Matrix<Scalar,InputsAtCompileTime,1> InputType;
-typedef Eigen::Matrix<Scalar,ValuesAtCompileTime,1> ValueType;
-typedef Eigen::Matrix<Scalar,ValuesAtCompileTime,InputsAtCompileTime> JacobianType;
+    typedef _Scalar Scalar;
+    enum {
+        InputsAtCompileTime = NX,
+        ValuesAtCompileTime = NY
+    };
+    typedef Eigen::Matrix<Scalar,InputsAtCompileTime,1> InputType;
+    typedef Eigen::Matrix<Scalar,ValuesAtCompileTime,1> ValueType;
+    typedef Eigen::Matrix<Scalar,ValuesAtCompileTime,InputsAtCompileTime> JacobianType;
 
-int m_inputs, m_values;
+    int m_inputs, m_values;
 
-Functor() : m_inputs(InputsAtCompileTime), m_values(ValuesAtCompileTime) {}
-Functor(int inputs, int values) : m_inputs(inputs), m_values(values) {}
+    Functor() : m_inputs(InputsAtCompileTime), m_values(ValuesAtCompileTime) {}
+    Functor(int inputs, int values) : m_inputs(inputs), m_values(values) {}
 
-int inputs() const { return m_inputs; }
-int values() const { return m_values; }
+    int inputs() const { return m_inputs; }
+    int values() const { return m_values; }
 
 };
 
@@ -55,12 +55,6 @@ struct MyFunctor : Functor<double>
         float beta = x(1);
         float gamma = x(2);
         
-        float h2 = 0.59885508;
-        float h3 = -0.037879128;
-        float h5 = 0.83761203;
-        float h6 = 0.25667429;
-        float h8 = -0.031710938;
-
         float D1 = h5 - h8 * h6;
         float D4 = h8 * h3 - h2;
         float D7 = h2 * h6 - h5 * h3;
@@ -98,6 +92,12 @@ struct MyFunctor : Functor<double>
 
   Point2DVector Points;
   
+  float h2;
+  float h3;
+  float h5;
+  float h6;
+  float h8;
+
   int inputs() const { return 3; } // There are two parameters of the model
   int values() const { return this->Points.size(); } // The number of observations
 };
@@ -307,10 +307,10 @@ int main(int argc, char* argv[]){
 
     //calculating the last three homography elements
     Eigen::VectorXd x(3);
-    /* x.fill(2.0f); */
-    x(0) = 0;
-    x(1) = 0;
-    x(2) = 0;
+    x.fill(0.0);
+    /* x(0) = 0.0; */
+    /* x(1) = -0.0; */
+    /* x(2) = 0.0; */
 
     Point2DVector points;
 
@@ -323,10 +323,22 @@ int main(int argc, char* argv[]){
         
     MyFunctorNumericalDiff functor;
     functor.Points = points;
+    functor.h2 = H.at<float>(0, 0);
+    functor.h3 = H.at<float>(0, 1);
+    functor.h5 = H.at<float>(1, 0);
+    functor.h6 = H.at<float>(1, 1);
+    functor.h8 = H.at<float>(2, 0);
+
     Eigen::LevenbergMarquardt<MyFunctorNumericalDiff> lm(functor);
 
+    lm.parameters.maxfev = 2000;
+    lm.parameters.xtol = 1.0e-10;
+
     Eigen::LevenbergMarquardtSpace::Status status = lm.minimize(x);
+
     std::cout << "status: " << status << std::endl;
+    std::cout << "iter: " << lm.iter << std::endl;
+
 
     //std::cout << "info: " << lm.info() << std::endl;
 
@@ -365,7 +377,7 @@ int main(int argc, char* argv[]){
 
         transformPoint(e, output, final_H, true);
         myfile<< output.x << " " << output.y << std::endl;
-        draw_cross(output, img, 15);
+        draw_cross(output, img, 1);
 
     }
 
