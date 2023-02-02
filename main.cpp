@@ -80,7 +80,7 @@ struct MyFunctor : Functor<double>
         float C3 = c3 * u2 + c6 * v2;
         
         float D = D1 * u2 + D4 * v2 + D7;
-        float R = 1.9945;
+        float R = 1.9945; //R in normalized point
 
         fvec(i) = pow(D, 2) + pow(A2 * alpha + B2 * beta + C2 * gamma, 2) - pow(R, 2) * pow(A3 * alpha + B3 * beta + C3 * gamma, 2);
       /* fvec(i) = this->Points[i](1) - (x(0) * this->Points[i](0) + x(1)); */
@@ -114,7 +114,6 @@ NormalizedData normalizeData(const std::vector<cv::Point2f>& points)
 {
 	int ptsNum = points.size();
 
-	// calculate means (they will be the center of coordinate systems)
 	float meanx = 0.0, meany = 0.0;
 	for (int i = 0; i < ptsNum; i++)
 	{
@@ -168,7 +167,7 @@ NormalizedData normalizeData(const std::vector<cv::Point2f>& points)
 	return result;
 }
 
-cv::Mat calcHomography(std::vector<cv::Point2f>& points_map, std::vector<cv::Point2f>& points_image)
+cv::Mat calcHomography(const std::vector<cv::Point2f>& points_map, const std::vector<cv::Point2f>& points_image)
 {
 
     const size_t ptsNum = points_image.size();
@@ -177,7 +176,6 @@ cv::Mat calcHomography(std::vector<cv::Point2f>& points_map, std::vector<cv::Poi
 
     for (int i = 0; i < ptsNum; i++)
     {
-        float u1 = points_map[i].x;
         float v1 = points_map[i].y;
 
         float u2 = points_image[i].x;
@@ -198,26 +196,26 @@ cv::Mat calcHomography(std::vector<cv::Point2f>& points_map, std::vector<cv::Poi
         A.at<float>(2 * i + 1, 5) = v2;
     }
 
-
     cv::Mat eVecs(6, 6, CV_32F), eVals(6, 6, CV_32F);
     cv::eigen(A.t() * A, eVals, eVecs);
 
-    cv::Mat H(3, 2, CV_32F);
+    cv::Mat H = cv::Mat::zeros(3, 3, CV_32F);   
+    /* cv::Mat H(3, 2, CV_32F); */   
 
-    std::cout << "evecs:\n" << eVecs << "\n";
-    std::cout << "evals:\n" << eVals << "\n";
+    std::cout << "evecs:\n" << eVecs << "\n\n";
+    std::cout << "evals:\n" << eVals << "\n\n";
 
     int count = 0;
     for (int i = 0; i < 3; i++){
-        for (int j = 0; j < 2; j++){
+        for (int j = 1; j < 3; j++){
             H.at<float>(i, j) = eVecs.at<float>(5, count);
             count++;
         }
     }
 
-    // normalize
-    H = H * (1.0 / H.at<float>(2, 1));
-    
+    std::cout << "6 H:\n" << H << "\n\n";
+    /* normalize */
+    H = H * (1.0 / H.at<float>(2, 2));
     return H;
     /* return normalized_points_map.T.inv() * H * normalized_points_image.T; */
 }
@@ -230,7 +228,7 @@ void draw_cross(cv::Point pt, cv::Mat image, int size){
         cv::Point starting2(pt.x + size, pt.y-size);
         cv::Point ending2(pt.x-size, pt.y+size);
 
-        cv::Scalar line_Color(255, 255, 255);
+        cv::Scalar line_Color(255, 0, 0);
        int thickness = 2;
        
     cv::line(image, starting1, ending1, line_Color, thickness);
@@ -263,6 +261,10 @@ int main(int argc, char* argv[]){
 	}
     
     std::vector<cv::Point2f> points_image;
+    
+    /* loading a circle data taken manually from an image */
+    /* the first three data contains three center line points*/ 
+    /* the rest are circle points */
 
 	std::string line;
 	while (getline(infile, line)){
@@ -278,11 +280,13 @@ int main(int argc, char* argv[]){
     std::vector<cv::Point2f> points_image_line(points_image_normalized.begin(), points_image_normalized.begin()+3);
     std::vector<cv::Point2f> points_image_circle(points_image_normalized.begin()+3, points_image_normalized.end());
 
+    /* generating three center points for the map */
     std::vector<cv::Point2f> points_map;
     points_map.emplace_back(cv::Point2f(0, 1));
     points_map.emplace_back(cv::Point2f(0, 0));
     points_map.emplace_back(cv::Point2f(0, -1));
-
+    
+    /* generating unit cirlce for the map */
     for(int i = 1; i < 360; i++){
         float angle = static_cast<float>(i) * 3.14159 / 180.0;
         float x = cos(angle);
@@ -293,24 +297,22 @@ int main(int argc, char* argv[]){
     NormalizedData points_map_nd = normalizeData(points_map);
     std::vector<cv::Point2f> points_map_normalized = points_map_nd.points;
     
-    std::vector<cv::Point2f> points_map_line(points_map_normalized.begin(), points_map_normalized.begin()+3);
+    const std::vector<cv::Point2f> points_map_line(points_map_normalized.begin(), points_map_normalized.begin()+3);
 
-    std::cout << "points_image_line:\n"; 
-    for(auto & e: points_image_line) std::cout << e << "\n";
+    /* std::cout << "points_image_line:\n"; */ 
+    /* for(auto & e: points_image_line) std::cout << e << "\n"; */
     
-    std::cout << "points_map_line:\n"; 
-    for(auto & e: points_map_line) std::cout << e << "\n";
+    /* std::cout << "points_map_line:\n"; */ 
+    /* for(auto & e: points_map_line) std::cout << e << "\n"; */
 
     cv::Mat H = calcHomography(points_map_line, points_image_line);
+    std::cout << "6 H Normalized:\n" << H << "\n\n";
 
-    std::cout << "6 H Normalized:\n" << H << "\n";
-
-    //calculating the last three homography elements
+    /* calculating the last three homography elements */
     Eigen::VectorXd x(3);
-    x.fill(0.0);
-    /* x(0) = 0.0; */
-    /* x(1) = -0.0; */
-    /* x(2) = 0.0; */
+    x(0) = 0.0;
+    x(1) = 0.0;
+    x(2) = 0.0;
 
     Point2DVector points;
 
@@ -323,11 +325,11 @@ int main(int argc, char* argv[]){
         
     MyFunctorNumericalDiff functor;
     functor.Points = points;
-    functor.h2 = H.at<float>(0, 0);
-    functor.h3 = H.at<float>(0, 1);
-    functor.h5 = H.at<float>(1, 0);
-    functor.h6 = H.at<float>(1, 1);
-    functor.h8 = H.at<float>(2, 0);
+    functor.h2 = H.at<float>(0, 1);
+    functor.h3 = H.at<float>(0, 2);
+    functor.h5 = H.at<float>(1, 1);
+    functor.h6 = H.at<float>(1, 2);
+    functor.h8 = H.at<float>(2, 1);
 
     Eigen::LevenbergMarquardt<MyFunctorNumericalDiff> lm(functor);
 
@@ -338,50 +340,30 @@ int main(int argc, char* argv[]){
 
     std::cout << "status: " << status << std::endl;
     std::cout << "iter: " << lm.iter << std::endl;
-
-
-    //std::cout << "info: " << lm.info() << std::endl;
-
-    std::cout << "x that minimizes the function: " << std::endl << x << std::endl;
-    
-    cv::Mat final_H(3, 3, CV_32F);
+    std::cout << "x that minimizes the function: " << std::endl << x << "\n\n";
     
     cv::Mat free_param(3, 1, CV_32F);
-    free_param.at<float>(0, 0) = x(0);
-    free_param.at<float>(1, 0) = x(1);
-    free_param.at<float>(2, 0) = x(2);
-
-    hconcat(free_param, H, final_H);
+    H.at<float>(0, 0) = x(0);
+    H.at<float>(1, 0) = x(1);
+    H.at<float>(2, 0) = x(2);
     
-    std::cout << "9H Normalized\n" << final_H << "\n";
+    std::cout << "9H Normalized\n" << H << "\n\n";
 
-    final_H = points_image_nd.T.inv() * final_H * points_map_nd.T;
-    std::cout << "9H Denormalized by T\n" << final_H << "\n";
-    
-    //Generate unit circle data 
-    std::vector<cv::Point2f> unit_circle;
-    for(int i = 1; i < 360; i++){
-        float angle = static_cast<float>(i) * 3.14159 / 180.0;
-        float x = cos(angle);
-        float y = sin(angle);
-        unit_circle.emplace_back(cv::Point2f(x, y));
-    }
+    H = points_image_nd.T.inv() * H * points_map_nd.T;
+    std::cout << "9H Denormalized by T\n" << H << "\n\n";
 
-    //projection to the original image
+    /* projection to the original image */
     cv::Mat img = cv::imread("image.png", cv::IMREAD_COLOR);
     cv::namedWindow("image", cv::WINDOW_NORMAL);
 
-    cv::Point2f output;
-    std::ofstream myfile("output.txt");
-    for(auto & e:  unit_circle){
-
-        transformPoint(e, output, final_H, true);
-        myfile<< output.x << " " << output.y << std::endl;
+    for(auto & e:  points_map){
+        cv::Point2f output;
+        transformPoint(e, output, H, true);
         draw_cross(output, img, 1);
-
     }
 
-    myfile.close();
+    cv::imwrite("image-output.png", img);
+
     cv::imshow("image", img);
     cv::waitKey(0);
 
